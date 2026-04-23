@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>GST Invoice Creation</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#2563eb",
+              "primary-hover": "#1d4ed8",
+              "background": "#f8fafc","surface": "#ffffff",
+              "text-main": "#0f172a",
+              "text-secondary": "#64748b",
+              "border-light": "#e2e8f0",
+              "border-focus": "#3b82f6",
+            },
+            fontFamily: {
+              "sans": ["Inter", "sans-serif"],
+              "mono": ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "Liberation Mono", "Courier New", "monospace"],
+            },
+            borderRadius: {
+              "DEFAULT": "0.375rem","md": "0.375rem",
+              "lg": "0.5rem", 
+              "xl": "0.75rem", 
+              "2xl": "1rem",
+            },
+            boxShadow: {
+              'card': '0 1px 2px 0 rgb(0 0 0 / 0.05)','card-hover': '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+              'input': '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+              'floating': '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05)',
+            }
+          },
+        },
+      }
+    </script>
+<style type="text/tailwindcss">
+        @layer utilities {
+            .input-field {
+                @apply w-full h-10 px-3 rounded-md border border-border-light bg-white text-text-main text-sm shadow-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all placeholder:text-gray-400 hover:border-gray-300;
+            }
+            .select-field {
+                @apply w-full h-10 px-3 rounded-md border border-border-light bg-white text-text-main text-sm shadow-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20fill%3D%22none%22%20viewBox%3D%220%200%2020%2020%22%3E%3Cpath%20stroke%3D%22%236b7280%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%20d%3D%22m6%208%204%204%204-4%22%2F%3E%3C%2Fsvg%3E')] bg-[length:1.25rem_1.25rem] bg-no-repeat bg-[right_0.5rem_center] hover:border-gray-300;
+            }
+            .section-label {
+                @apply text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2 block;
+            }
+        }
+    </style>
+</head>
+<body class="bg-background font-sans text-text-main min-h-screen flex flex-col pb-24">
+<header class="bg-surface border-b border-border-light sticky top-0 z-50">
+<div class="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
+<div class="flex items-center justify-between h-16">
+<div class="flex items-center gap-3">
+<div class="size-8 bg-primary rounded-lg flex items-center justify-center text-white shadow-sm">
+<span class="material-symbols-outlined text-[20px]">description</span>
+</div>
+<h1 class="text-xl font-bold tracking-tight text-text-main">Invoicer</h1>
+</div>
+<div class="flex items-center gap-6">
+<button class="hidden md:flex items-center gap-2 text-text-secondary hover:text-primary transition-colors text-sm font-medium">
+<span class="material-symbols-outlined text-[18px]">help</span>
+<span>Help Center</span>
+</button>
+<div class="size-9 rounded-full bg-cover bg-center ring-2 ring-gray-100 shadow-sm cursor-pointer" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCYtP8M__tUVPKUs8RbkjbWZeoRWfHzgtj1BjYPPzPrgtUG-2SSJ8VgCyriNY2QBNK1dIMq-7lJrGtS0m_KxS-hxTt0zXvfJjvuLr2DHNYDIb6etIVd_T7WrsMpOkg23I9iHRyK8ntmwDuIJpd3QQ9YeglD2GWQrrX0EfgnXoLlTE4bSU9IzsZEEGA4_luA5enFFRbf95hE9KKF6FTWeqgb3mbYxyZjrlxqM8jI0sxIKG_JNj8tHUzdeDKOJIOzJBYcUGTLKb708TbT');"></div>
+</div>
+</div>
+</div>
+</header>
+<main class="flex-1 w-full max-w-[1400px] mx-auto p-4 md:p-8 flex flex-col gap-8">
+<div class="flex flex-col gap-1">
+<h2 class="text-3xl font-bold text-text-main tracking-tight">Create New Invoice</h2>
+<p class="text-text-secondary text-base">Fill in the details below to generate a new invoice.</p>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+<div class="lg:col-span-7 flex flex-col h-full">
+<div class="bg-surface rounded-xl shadow-card border border-border-light p-6 h-full flex flex-col">
+<div class="flex items-center justify-between mb-6">
+<h3 class="text-sm font-bold text-text-main uppercase tracking-wide flex items-center gap-2">
+                        Bill To <span class="text-red-500">*</span>
+</h3>
+</div>
+<div class="grid grid-cols-1 gap-6 flex-1">
+<div class="relative">
+<input class="w-full h-11 pl-10 pr-4 rounded-md border border-border-light bg-background text-text-main text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none transition-all placeholder:text-text-secondary shadow-sm hover:border-gray-300" placeholder="Search and select a customer..." type="text"/>
+<span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-text-secondary text-[20px]">search</span>
+<button class="absolute right-3 top-1/2 -translate-y-1/2 text-primary text-xs font-semibold hover:underline bg-white px-2 py-1 rounded border border-transparent hover:bg-gray-50">+ New Customer</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+<div class="space-y-1.5">
+<label class="text-xs font-semibold text-text-main">Customer Name</label>
+<input class="input-field" placeholder="e.g. Acme Corp" type="text" value="Acme Corp Pvt Ltd"/>
+</div>
+<div class="space-y-1.5">
+<label class="text-xs font-semibold text-text-main">GSTIN / UIN</label>
+<input class="input-field uppercase font-mono tracking-wide" placeholder="GST Number" type="text" value="27ABCDE1234F1Z5"/>
+</div>
+<div class="space-y-1.5 md:col-span-2">
+<label class="text-xs font-semibold text-text-main">Billing Address</label>
+<input class="input-field" placeholder="Address Line 1" type="text" value="123 Business Park, Tech Hub, Mumbai"/>
+</div>
+</div>
+<div class="mt-auto pt-4 border-t border-border-light flex items-center gap-2">
+<div class="relative flex items-center">
+<input checked="" class="peer h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer" id="same_address" type="checkbox"/>
+<label class="ml-2 text-sm text-text-secondary cursor-pointer select-none font-medium" for="same_address">Shipping address is same as billing address</label>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="lg:col-span-5 flex flex-col h-full">
+<div class="bg-surface rounded-xl shadow-card border border-border-light p-6 h-full">
+<div class="flex items-center gap-2 mb-6 border-b border-border-light pb-4">
+<span class="material-symbols-outlined text-text-secondary">receipt_long</span>
+<h3 class="text-sm font-bold text-text-main uppercase tracking-wide">Invoice Details</h3>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-6">
+<div class="space-y-1.5">
+<label class="text-xs font-semibold text-text-main">Invoice Number <span class="text-red-500">*</span></label>
+<div class="relative">
+<input class="input-field font-mono text-text-main" type="text" value="INV-2024-001"/>
+<span class="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs select-none">#</span>
+</div>
+</div>
+<div class="space-y-1.5">
+<label class="text-xs font-semibold text-text-main">Invoice Date <span class="text-red-500">*</span></label>
+<div class="relative">
+<input class="input-field pl-9 text-text-main" type="date" value="2024-12-16"/>
+<span class="absolute left-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-text-secondary text-[18px] pointer-events-none">calendar_today</span>
+</div>
+</div>
+<div class="space-y-1.5">
+<label class="text-xs font-semibold text-text-main">Due Date</label>
+<div class="relative">
+<input class="input-field pl-9 text-text-main" type="date"/>
+<span class="absolute left-2.5 top-1/2 -translate-y-1/2 material-symbols-outlined text-text-secondary text-[18px] pointer-events-none">event_upcoming</span>
+</div>
+</div>
+<div class="space-y-1.5">
+<label class="text-xs font-semibold text-text-main">Place of Supply</label>
+<select class="select-field text-text-main">
+<option>27 - Maharashtra</option>
+<option>29 - Karnataka</option>
+<option>07 - Delhi</option>
+</select>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="bg-surface rounded-xl shadow-card border border-border-light overflow-hidden flex flex-col">
+<div class="px-6 py-5 border-b border-border-light flex justify-between items-center bg-white">
+<div class="flex items-center gap-2">
+<div class="bg-blue-50 text-primary p-1.5 rounded-md">
+<span class="material-symbols-outlined text-[20px]">shopping_cart</span>
+</div>
+<div>
+<h3 class="text-base font-bold text-text-main">Line Items</h3>
+<p class="text-xs text-text-secondary mt-0.5">Manage products and services for this invoice</p>
+</div>
+</div>
+<div class="text-xs font-medium px-2.5 py-1 bg-gray-100 rounded-full text-text-secondary border border-gray-200">
+                2 items added
+            </div>
+</div>
+<div class="flex flex-col p-6 gap-5 bg-gray-50/50">
+<div class="relative p-6 rounded-xl bg-white border border-border-light shadow-sm transition-all duration-200 hover:shadow-md hover:border-blue-200 group">
+<button class="absolute top-4 right-4 text-text-secondary hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors" title="Remove Item">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-6">
+<div class="md:col-span-5 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Product</label>
+<input class="input-field font-semibold text-text-main" placeholder="Enter product name" type="text" value="Wireless Mouse M100"/>
+</div>
+<div class="md:col-span-3 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Unit</label>
+<select class="select-field">
+<option>Pcs</option>
+<option>Kg</option>
+<option>Ltr</option>
+<option>Box</option>
+<option>Mtr</option>
+</select>
+</div>
+<div class="md:col-span-4 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Warehouse</label>
+<select class="select-field">
+<option>WH-Main-MUM</option>
+<option>WH-Secondary-DEL</option>
+</select>
+<div class="flex items-center gap-1.5 mt-1.5">
+<span class="material-symbols-outlined text-[14px] text-text-secondary">inventory_2</span>
+<span class="text-[11px] text-text-secondary font-medium">450 units available</span>
+</div>
+</div>
+<div class="md:col-span-3 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Batch Info</label>
+<select class="select-field">
+<option>BAT-2023-A</option>
+<option>BAT-2023-B</option>
+</select>
+<div class="flex items-center gap-1.5 mt-1.5">
+<div class="size-1.5 rounded-full bg-emerald-500"></div>
+<span class="text-[11px] text-text-secondary font-medium">Exp: Dec 2024</span>
+</div>
+</div>
+<div class="md:col-span-2 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Quantity</label>
+<input class="input-field text-right font-medium" type="number" value="10"/>
+</div>
+<div class="md:col-span-2 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Unit Price</label>
+<div class="relative">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs">₹</span>
+<input class="input-field pl-7 text-right font-medium" type="number" value="450.00"/>
+</div>
+</div>
+<div class="md:col-span-1 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">GST</label>
+<select class="select-field px-1 text-center bg-[right_0.25rem_center]">
+<option>18%</option>
+<option>12%</option>
+<option>5%</option>
+</select>
+</div>
+<div class="md:col-span-1 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Cess</label>
+<select class="select-field px-1 text-center bg-[right_0.25rem_center]">
+<option>0%</option>
+<option>1%</option>
+<option>5%</option>
+<option selected="">12%</option>
+</select>
+</div>
+<div class="md:col-span-3 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Total Amount</label>
+<div class="relative">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs">₹</span>
+<input class="input-field pl-7 text-right font-bold text-text-main" type="number" value="5850.00"/>
+</div>
+</div>
+</div>
+</div>
+<div class="relative p-6 rounded-xl bg-white border border-border-light shadow-sm transition-all duration-200 hover:shadow-md hover:border-blue-200 group">
+<button class="absolute top-4 right-4 text-text-secondary hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors" title="Remove Item">
+<span class="material-symbols-outlined text-[20px]">delete</span>
+</button>
+<div class="grid grid-cols-1 md:grid-cols-12 gap-x-6 gap-y-6">
+<div class="md:col-span-5 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Product</label>
+<input class="input-field font-semibold text-text-main" placeholder="Enter product name" type="text" value="USB-C Hub Multiport"/>
+</div>
+<div class="md:col-span-3 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Unit</label>
+<select class="select-field">
+<option>Pcs</option>
+<option>Kg</option>
+<option>Ltr</option>
+<option>Box</option>
+<option>Mtr</option>
+</select>
+</div>
+<div class="md:col-span-4 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Warehouse</label>
+<select class="select-field">
+<option>WH-Main-MUM</option>
+</select>
+<div class="flex items-center gap-1.5 mt-1.5">
+<span class="material-symbols-outlined text-[14px] text-text-secondary">inventory_2</span>
+<span class="text-[11px] text-text-secondary font-medium">120 units available</span>
+</div>
+</div>
+<div class="md:col-span-3 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Batch Info</label>
+<select class="select-field">
+<option>HUB-009-X</option>
+</select>
+<div class="flex items-center gap-1.5 mt-1.5">
+<div class="size-1.5 rounded-full bg-orange-500"></div>
+<span class="text-[11px] text-text-secondary font-medium">Exp: Jun 2025</span>
+</div>
+</div>
+<div class="md:col-span-2 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Quantity</label>
+<input class="input-field text-right font-medium" type="number" value="2"/>
+</div>
+<div class="md:col-span-2 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Unit Price</label>
+<div class="relative">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs">₹</span>
+<input class="input-field pl-7 text-right font-medium" type="number" value="1200.00"/>
+</div>
+</div>
+<div class="md:col-span-1 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">GST</label>
+<select class="select-field px-1 text-center bg-[right_0.25rem_center]">
+<option selected="">18%</option>
+<option>12%</option>
+<option>5%</option>
+</select>
+</div>
+<div class="md:col-span-1 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Cess</label>
+<select class="select-field px-1 text-center bg-[right_0.25rem_center]">
+<option selected="">0%</option>
+<option>1%</option>
+<option>5%</option>
+</select>
+</div>
+<div class="md:col-span-3 space-y-1.5">
+<label class="text-[11px] font-bold text-text-secondary uppercase tracking-wider">Total Amount</label>
+<div class="relative">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs">₹</span>
+<input class="input-field pl-7 text-right font-bold text-text-main" type="number" value="2832.00"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="p-4 bg-gray-50 border-t border-border-light flex justify-center sm:justify-start">
+<button class="text-primary hover:text-primary-hover border border-primary/20 bg-blue-50/50 hover:bg-blue-50 text-sm font-semibold flex items-center gap-2 px-5 py-2.5 rounded-lg transition-all shadow-sm hover:shadow-md">
+<span class="material-symbols-outlined text-[20px]">add_circle</span>
+                Add Line Item
+            </button>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start mb-10">
+<div class="space-y-4">
+<div class="space-y-2">
+<label class="text-sm font-semibold text-text-main">Terms &amp; Conditions</label>
+<textarea class="w-full p-4 rounded-xl border border-border-light bg-surface text-text-main text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none resize-none shadow-sm h-36 placeholder:text-gray-400" placeholder="Enter notes for the customer, payment terms..."></textarea>
+<p class="text-xs text-text-secondary">These notes will appear on the final invoice PDF.</p>
+</div>
+</div>
+<div class="bg-surface rounded-xl shadow-card border border-border-light p-6 w-full lg:max-w-md ml-auto">
+<div class="flex items-center gap-2 mb-4 text-text-main border-b border-border-light pb-3">
+<span class="material-symbols-outlined text-text-secondary text-[20px]">summarize</span>
+<h3 class="font-bold text-sm uppercase tracking-wide">Invoice Summary</h3>
+</div>
+<div class="space-y-3 pt-1">
+<div class="flex justify-between items-center text-sm">
+<span class="text-text-secondary font-medium">Subtotal (Excl. Tax)</span>
+<span class="font-bold text-text-main font-mono">₹ 6,900.00</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<span class="text-text-secondary font-medium">CGST (9%)</span>
+<span class="font-bold text-text-main font-mono">+ ₹ 621.00</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<span class="text-text-secondary font-medium">SGST (9%)</span>
+<span class="font-bold text-text-main font-mono">+ ₹ 621.00</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<span class="text-text-secondary font-medium">Cess</span>
+<span class="font-bold text-text-main font-mono">+ ₹ 540.00</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<span class="text-text-secondary font-medium">Round Off</span>
+<span class="font-bold text-text-main font-mono">- ₹ 0.00</span>
+</div>
+<div class="my-4 border-t border-dashed border-border-light"></div>
+<div class="flex justify-between items-center">
+<div class="flex flex-col">
+<span class="text-lg font-bold text-text-main">Grand Total</span>
+<span class="text-xs text-text-secondary mt-0.5">2 line items</span>
+</div>
+<span class="text-2xl font-bold text-primary tracking-tight font-mono">₹ 8,682.00</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<div class="fixed bottom-0 left-0 right-0 bg-surface border-t border-border-light p-4 z-40">
+<div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+<div class="hidden sm:flex items-center gap-2 text-sm text-text-secondary">
+<span class="material-symbols-outlined text-[18px] text-green-600">check_circle</span>
+            Draft saved <span class="text-text-secondary/70">just now</span>
+</div>
+<div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+<button class="flex-1 sm:flex-none h-10 px-6 rounded-md border border-border-light bg-white text-text-main font-medium hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm">
+                Cancel
+            </button>
+<button class="flex-1 sm:flex-none h-10 px-6 rounded-md border border-border-light bg-white text-text-main font-medium hover:bg-gray-50 hover:border-gray-300 transition-colors flex items-center justify-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-[18px]">save</span>
+                Save Draft
+            </button>
+<button class="flex-1 sm:flex-none h-10 px-6 rounded-md bg-primary text-white font-medium hover:bg-primary-hover transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">send</span>
+                Generate Invoice
+            </button>
+</div>
+</div>
+</div>
+</body></html>
