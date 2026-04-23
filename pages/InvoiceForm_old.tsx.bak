@@ -1,0 +1,1112 @@
+
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import SearchableSelect from '../components/SearchableSelect';
+import QuickCreateCustomerModal from '../components/QuickCreateCustomerModal';
+import ProductSelectionModal from '../components/ProductSelectionModal';
+import InlineAsyncSelect from '../components/InlineAsyncSelect';
+import { getProducts, getCustomers, getWarehouses, createCustomer, getInvoice, createInvoice, updateInvoice, getNextInvoiceNumber, searchCustomers, searchProducts, getProductBatches, getProductWarehouses } from '../services/api';
+
+const InvoiceForm: React.FC = () => {
+  const navigate = useNavigate();
+  const { id } = useParams();
+  const isEdit = Boolean(id);
+
+  // Form State
+  const [formData, setFormData] = useState({
+    invoiceNumber: '',
+    date: new Date().toISOString().split('T')[0],
+    dueDate: '',
+    customer: '',
+    paymentTerms: 'Net 30 Days'
+  });
+
+  // Items State
+  const [items, setItems] = useState([{
+    id: Date.now(),
+    product: '',
+    productId: null,
+    warehouse: '',
+    batch: '',
+    qty: 1,
+    unit: '',
+    price: 0,
+    gstRate: 0,
+    cessRate: 0,
+    total: 0
+  }]);
+  
+  // Dynamic Data State
+  const [products, setProducts] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [isCreateCustomerModalOpen, setIsCreateCustomerModalOpen] = useState(false);
+  const [isProductSelectionModalOpen, setIsProductSelectionModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [customerSearchResults, setCustomerSearchResults] = useState<any[]>([]);
+  const [isSearchingCustomers, setIsSearchingCustomers] = useState(false);
+  
+  // Load data from database
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [productsRes, warehousesRes] = await Promise.all([
+          getProducts(1, 1000),
+          getWarehouses(1, 1000)
+        ]);
+        setProducts(productsRes.data.items || []);
+        setWarehouses(warehousesRes.data.items || []);
+        
+        // Fetch next invoice number only for new invoices
+        if (!isEdit) {
+          const nextNumberRes = await getNextInvoiceNumber();
+          setFormData(prev => ({ ...prev, invoiceNumber: nextNumberRes.data.nextInvoiceNumber }));
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [isEdit]);
+
+  // Load invoice data when editing
+  useEffect(() => {
+    if (isEdit && id) {
+      const fetchInvoice = async () => {
+        setLoading(true);
+        try {
+          const response = await getInvoice(Number(id));
+          const invoice = response.data;
+          setFormData({
+            invoiceNumber: invoice.invoiceNumber || '',
+            date: invoice.date || '',
+            dueDate: invoice.dueDate || '',
+            customer: invoice.customer || '',
+            paymentTerms: invoice.paymentTerms || 'Net 30 Days'
+          });
+          // Parse items if stored as JSON string
+          const invoiceItems = typeof invoice.items === 'string' ? JSON.parse(invoice.items) : invoice.items;
+          setItems(invoiceItems || []);
+        } catch (error) {
+          console.error('Error fetching invoice:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchInvoice();
+    }
+  }, [isEdit, id]);
+
+  // Debounced customer search
+  useEffect(() => {
+    const searchTimer = setTimeout(async () => {
+      if (customerSearchQuery.length > 0) {
+        setIsSearchingCustomers(true);
+        try {
+          const response = await searchCustomers(customerSearchQuery, 10);
+          setCustomerSearchResults(response.data.items || []);
+        } catch (error) {
+          console.error('Error searching customers:', error);
+          setCustomerSearchResults([]);
+        } finally {
+          setIsSearchingCustomers(false);
+        }
+      } else {
+        setCustomerSearchResults([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(searchTimer);
+  }, [customerSearchQuery]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      const filledItems = items.filter(item => item.product);
+      
+      // Ctrl+S or Cmd+S - Save Draft
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (!saving && filledItems.length > 0) {
+          handleSave();
+        }
+      }
+      // Ctrl+Enter or Cmd+Enter - Generate Invoice
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (!saving && filledItems.length > 0) {
+          handleGenerateInvoice();
+        }
+      }
+      // Ctrl+I or Cmd+I - Add Item
+      if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+        e.preventDefault();
+        addItem();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [saving, items]);
+
+  // Handlers
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleCreateCustomer = async (data: any) => {
+    const response = await createCustomer(data);
+    const newCustomer = response.data;
+    
+    // Refresh customers list
+    const customersRes = await getCustomers(1, 1000);
+    setCustomers(customersRes.data.items || []);
+    
+    // Auto-select the newly created customer
+    setFormData(prev => ({ ...prev, customer: newCustomer.name }));
+  };
+
+  const addItem = () => {
+    setIsProductSelectionModalOpen(true);
+  };
+
+  const handleSelectProducts = (selectedProducts: any[]) => {
+    // Get existing product names to avoid duplicates
+    const existingProductNames = new Set(items.map(item => item.product));
+    
+    // Only add products that aren't already in the invoice
+    const productsToAdd = selectedProducts.filter(product => !existingProductNames.has(product.name));
+    
+    const newItems = productsToAdd.map(product => {
+      const sellingPrice = Number(product.sellingPrice) || 0;
+      const gstRate = Number(product.gstPercentage) || 0;
+      const cessRate = Number(product.cessPercentage) || 0;
+      const sellingPriceIncludesTax = product.sellingPriceTax === true;
+      const qty = Number(product.quantity) || 1;
+      
+      let basePrice = sellingPrice;
+      let baseAmount = 0;
+      
+      if (sellingPriceIncludesTax && (gstRate > 0 || cessRate > 0)) {
+        // Extract base price if tax is included
+        const totalTaxRate = gstRate + cessRate;
+        basePrice = sellingPrice / (1 + (totalTaxRate / 100));
+        baseAmount = basePrice * qty;
+      } else {
+        // Selling price excludes tax
+        basePrice = sellingPrice;
+        baseAmount = basePrice * qty;
+      }
+      
+      // Calculate taxes
+      const gstAmount = baseAmount * (gstRate / 100);
+      const cessAmount = baseAmount * (cessRate / 100);
+      const total = baseAmount + gstAmount + cessAmount;
+      
+      return {
+        id: Date.now() + Math.random(), 
+        product: product.name,
+        productId: product.id,
+        warehouse: '',
+        batch: '',
+        qty: qty,
+        unit: product.measuringUnit || '', 
+        price: basePrice, 
+        gstRate: gstRate,
+        cessRate: cessRate,
+        total: total 
+      };
+    });
+    
+    if (newItems.length > 0) {
+      setItems([...items, ...newItems]);
+    }
+  };
+
+  const deleteItem = (id: number) => {
+    // Prevent deleting the last row - always keep at least one row
+    if (items.length === 1) {
+      // Reset the row instead of deleting
+      setItems([{
+        id: Date.now(),
+        product: '',
+        productId: null,
+        warehouse: '',
+        batch: '',
+        qty: 1,
+        unit: '',
+        price: 0,
+        gstRate: 0,
+        cessRate: 0,
+        total: 0
+      }]);
+    } else {
+      setItems(items.filter(item => item.id !== id));
+    }
+  };
+
+  const addNewRow = () => {
+    const newRow = {
+      id: Date.now(),
+      product: '',
+      productId: null,
+      warehouse: '',
+      batch: '',
+      qty: 1,
+      unit: '',
+      price: 0,
+      gstRate: 0,
+      cessRate: 0,
+      total: 0
+    };
+    setItems([...items, newRow]);
+  };
+
+  const getProductBatches = (productName: string) => {
+    const product = products.find(p => p.name === productName);
+    if (!product || !product.enableBatching) {
+      return [];
+    }
+    // If batches is stored as JSON array
+    return product.batches || [];
+  };
+
+  const handleItemChange = (id: number, field: string, value: string | number) => {
+    setItems(items.map(item => {
+      if (item.id === id) {
+        const updatedItem: any = { ...item };
+
+        if (field === 'product') {
+          updatedItem.product = value;
+          const product = products.find(p => p.name === value);
+          if (product) {
+            const sellingPrice = Number(product.sellingPrice) || 0;
+            const gstRate = Number(product.gstPercentage) || 0;
+            const cessRate = Number(product.cessPercentage) || 0;
+            const sellingPriceIncludesTax = product.sellingPriceTax === true;
+            
+            // Reset batch and set default unit when product changes
+            updatedItem.batch = '';
+            updatedItem.unit = product.measuringUnit || '';
+            
+            let basePrice = sellingPrice;
+            let baseAmount = 0;
+            
+            if (sellingPriceIncludesTax && (gstRate > 0 || cessRate > 0)) {
+              // Selling price includes tax, so we need to extract the base price
+              // Formula: Base Price = Selling Price / (1 + (GST% + CESS%) / 100)
+              const totalTaxRate = gstRate + cessRate;
+              basePrice = sellingPrice / (1 + (totalTaxRate / 100));
+              baseAmount = basePrice * updatedItem.qty;
+            } else {
+              // Selling price excludes tax
+              basePrice = sellingPrice;
+              baseAmount = basePrice * updatedItem.qty;
+            }
+            
+            updatedItem.price = basePrice;
+            
+            // Store GST and CESS rates for the dropdowns
+            updatedItem.gstRate = gstRate;
+            updatedItem.cessRate = cessRate;
+          }
+        } else if (field === 'unit') {
+          // When unit changes, adjust price based on conversion ratio
+          updatedItem.unit = value;
+          const product = products.find(p => p.name === item.product);
+          
+          if (product && product.altMeasuringUnit && product.conversionRatio) {
+            const sellingPrice = Number(product.sellingPrice) || 0;
+            const gstRate = Number(product.gstPercentage) || 0;
+            const cessRate = Number(product.cessPercentage) || 0;
+            const sellingPriceIncludesTax = product.sellingPriceTax === true;
+            const conversionRatio = Number(product.conversionRatio) || 1;
+            
+            let basePrice = sellingPrice;
+            
+            // Extract base price if tax is included
+            if (sellingPriceIncludesTax && (gstRate > 0 || cessRate > 0)) {
+              const totalTaxRate = gstRate + cessRate;
+              basePrice = sellingPrice / (1 + (totalTaxRate / 100));
+            }
+            
+            // If alternate unit is selected, divide price by conversion ratio
+            // Example: ₹100 per primary unit, ratio 1:12 → ₹100/12 per secondary unit
+            if (value === product.altMeasuringUnit) {
+              updatedItem.price = basePrice / conversionRatio;
+            } else {
+              // Primary unit - use base price
+              updatedItem.price = basePrice;
+            }
+            
+            // Recalculate taxes with new price
+            const baseAmount = updatedItem.price * updatedItem.qty;
+            updatedItem.gstRate = gstRate;
+            updatedItem.cessRate = cessRate;
+          }
+        } else if (field === 'total') {
+           // Reverse calculation if Total is edited manually
+           // Formula: Price = (Total - Taxes) / Qty
+           const newTotal = Number(value);
+           updatedItem.total = newTotal;
+           
+           const qty = Number(updatedItem.qty) || 1;
+           const baseAmount = updatedItem.price * qty;
+           const gstAmount = baseAmount * (Number(updatedItem.gstRate) / 100);
+           const cessAmount = baseAmount * (Number(updatedItem.cessRate) / 100);
+           const totalTax = gstAmount + cessAmount;
+           
+           // Update Unit Price based on new total
+           updatedItem.price = (newTotal - totalTax) / qty;
+           return updatedItem; // Return early to avoid re-calc loop
+        } else {
+          updatedItem[field] = value;
+        }
+
+        // Standard Calculation (Forward)
+        const qty = Number(updatedItem.qty) || 0;
+        const price = Number(updatedItem.price) || 0;
+        const gstRate = Number(updatedItem.gstRate) || 0;
+        const cessRate = Number(updatedItem.cessRate) || 0;
+
+        // Auto-recalculate taxes if Qty, Price, GST Rate, or CESS Rate changed
+        if (field === 'qty' || field === 'price' || field === 'gstRate' || field === 'cessRate') {
+           const baseTotal = price * qty;
+           const gstAmount = baseTotal * (gstRate / 100);
+           const cessAmount = baseTotal * (cessRate / 100);
+           // Recalculate total with new taxes
+           updatedItem.total = baseTotal + gstAmount + cessAmount;
+        } else {
+          // Recalculate Total for other field changes
+          const baseTotal = price * qty;
+          const gstAmount = baseTotal * (gstRate / 100);
+          const cessAmount = baseTotal * (cessRate / 100);
+          updatedItem.total = baseTotal + gstAmount + cessAmount;
+        }
+        
+        return updatedItem;
+      }
+      return item;
+    }));
+  };
+
+  const subtotal = items.reduce((acc, item) => acc + (Number(item.price) * Number(item.qty)), 0);
+  const totalTax = items.reduce((acc, item) => {
+    const baseAmount = Number(item.price) * Number(item.qty);
+    const gstAmount = baseAmount * (Number(item.gstRate) / 100);
+    const cessAmount = baseAmount * (Number(item.cessRate) / 100);
+    return acc + gstAmount + cessAmount;
+  }, 0);
+  const grandTotal = items.reduce((acc, item) => acc + Number(item.total), 0);
+
+  const validateForm = () => {
+    const newErrors: {[key: string]: string} = {};
+    
+    if (!formData.customer) newErrors.customer = 'Customer is required';
+    if (!formData.invoiceNumber) newErrors.invoiceNumber = 'Invoice number is required';
+    if (!formData.date) newErrors.date = 'Invoice date is required';
+    
+    // Filter out empty rows (rows with no product selected)
+    const filledItems = items.filter(item => item.product);
+    
+    if (filledItems.length === 0) newErrors.items = 'Add at least one item to the invoice';
+    
+    filledItems.forEach((item, index) => {
+      if (!item.qty || item.qty <= 0) newErrors[`item_${index}_qty`] = `Valid quantity required for item ${index + 1}`;
+    });
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!validateForm()) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Get full customer details
+      let customerData = customers.find(c => c.name === formData.customer) || 
+                         customerSearchResults.find(c => c.name === formData.customer);
+      
+      // If customer not found in memory, fetch from API
+      if (!customerData && formData.customer) {
+        try {
+          const searchRes = await searchCustomers(formData.customer, 1);
+          if (searchRes.data.items && searchRes.data.items.length > 0) {
+            customerData = searchRes.data.items.find(c => c.name === formData.customer);
+          }
+        } catch (err) {
+          console.error('Error fetching customer details:', err);
+        }
+      }
+      
+      // Filter out empty rows (rows with no product selected)
+      const filledItems = items.filter(item => item.product);
+      
+      const invoiceData = {
+        invoiceNumber: formData.invoiceNumber,
+        date: formData.date,
+        dueDate: formData.dueDate,
+        customer: formData.customer,
+        customerDetails: customerData ? JSON.stringify(customerData) : null,
+        paymentTerms: formData.paymentTerms,
+        items: JSON.stringify(filledItems),
+        subtotal: subtotal,
+        totalTax: totalTax,
+        grandTotal: grandTotal,
+        status: 'draft'
+      };
+
+      if (isEdit && id) {
+        await updateInvoice(Number(id), invoiceData);
+      } else {
+        await createInvoice(invoiceData);
+      }
+      navigate('/invoices');
+    } catch (error: any) {
+      console.error('Error saving invoice:', error);
+      
+      // Handle duplicate invoice number
+      if (error.response?.data?.code === 'DUPLICATE_INVOICE_NUMBER') {
+        try {
+          const nextNumberRes = await getNextInvoiceNumber();
+          const suggestedNumber = nextNumberRes.data.nextInvoiceNumber;
+          
+          if (window.confirm(`Invoice number "${formData.invoiceNumber}" already exists. Would you like to use "${suggestedNumber}" instead?`)) {
+            setFormData(prev => ({ ...prev, invoiceNumber: suggestedNumber }));
+            setErrors(prev => ({ ...prev, invoiceNumber: '' }));
+          }
+        } catch (err) {
+          alert(`Invoice number already exists. Please use a different invoice number.`);
+        }
+      } else {
+        alert(`Failed to save invoice: ${error.response?.data?.message || error.message}`);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleGenerateInvoice = async () => {
+    if (!validateForm()) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      // Get full customer details
+      let customerData = customers.find(c => c.name === formData.customer) || 
+                         customerSearchResults.find(c => c.name === formData.customer);
+      
+      // If customer not found in memory, fetch from API
+      if (!customerData && formData.customer) {
+        try {
+          const searchRes = await searchCustomers(formData.customer, 1);
+          if (searchRes.data.items && searchRes.data.items.length > 0) {
+            customerData = searchRes.data.items.find(c => c.name === formData.customer);
+          }
+        } catch (err) {
+          console.error('Error fetching customer details:', err);
+        }
+      }
+      
+      // Filter out empty rows (rows with no product selected)
+      const filledItems = items.filter(item => item.product);
+      
+      const invoiceData = {
+        invoiceNumber: formData.invoiceNumber,
+        date: formData.date,
+        dueDate: formData.dueDate,
+        customer: formData.customer,
+        customerDetails: customerData ? JSON.stringify(customerData) : null,
+        paymentTerms: formData.paymentTerms,
+        items: JSON.stringify(filledItems),
+        subtotal: subtotal,
+        totalTax: totalTax,
+        grandTotal: grandTotal,
+        status: 'generated'
+      };
+
+      if (isEdit && id) {
+        await updateInvoice(Number(id), invoiceData);
+      } else {
+        await createInvoice(invoiceData);
+      }
+      navigate('/invoices');
+    } catch (error: any) {
+      console.error('Error generating invoice:', error);
+      
+      // Handle duplicate invoice number
+      if (error.response?.data?.code === 'DUPLICATE_INVOICE_NUMBER') {
+        try {
+          const nextNumberRes = await getNextInvoiceNumber();
+          const suggestedNumber = nextNumberRes.data.nextInvoiceNumber;
+          
+          if (window.confirm(`Invoice number "${formData.invoiceNumber}" already exists. Would you like to use "${suggestedNumber}" instead?`)) {
+            setFormData(prev => ({ ...prev, invoiceNumber: suggestedNumber }));
+            setErrors(prev => ({ ...prev, invoiceNumber: '' }));
+          }
+        } catch (err) {
+          alert(`Invoice number already exists. Please use a different invoice number.`);
+        }
+      } else {
+        alert(`Failed to generate invoice: ${error.response?.data?.message || error.message}`);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8 max-w-[1400px] mx-auto flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-500 dark:text-gray-400">Loading invoice data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8 w-full max-w-[1400px] mx-auto pb-24">
+      {/* Header */}
+      <div className="flex flex-col gap-1 mb-8">
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{isEdit ? 'Edit Invoice' : 'Create New Invoice'}</h2>
+        <p className="text-gray-500 dark:text-gray-400 text-base">{isEdit ? 'Update invoice details.' : 'Fill in the details below to generate a new invoice.'}</p>
+      </div>
+
+      {/* Error Banner */}
+      {Object.keys(errors).length > 0 && (
+        <div className="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <span className="material-symbols-outlined text-red-500">error</span>
+            <div className="flex-1">
+              <h3 className="font-semibold text-red-800 dark:text-red-300 mb-2">Please fix the following errors:</h3>
+              <ul className="list-disc list-inside space-y-1 text-sm text-red-700 dark:text-red-400">
+                {Object.values(errors).map((error, idx) => (
+                  <li key={idx}>{error}</li>
+                ))}
+              </ul>
+            </div>
+            <button onClick={() => setErrors({})} className="text-red-500 hover:text-red-700">
+              <span className="material-symbols-outlined">close</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-8">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+          {/* Bill To Section */}
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-6">
+            <div>
+              <label className="text-sm font-medium mb-2 block text-gray-900 dark:text-white">
+                Bill To <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={customerSearchQuery || formData.customer}
+                  onChange={(e) => {
+                    setCustomerSearchQuery(e.target.value);
+                    if (!e.target.value) {
+                      setFormData(prev => ({ ...prev, customer: '' }));
+                    }
+                  }}
+                  placeholder="Search and select a customer..."
+                  className={`w-full rounded-lg border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 p-2.5 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/50 ${errors.customer ? 'border-red-500' : ''}`}
+                />
+                {isSearchingCustomers && (
+                  <div className="absolute right-3 top-3">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                  </div>
+                )}
+                {customerSearchQuery && customerSearchResults.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {customerSearchResults.map((customer) => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, customer: customer.name }));
+                          setCustomerSearchQuery('');
+                          setCustomerSearchResults([]);
+                          setErrors(prev => ({...prev, customer: ''}));
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-200 dark:border-gray-700 last:border-b-0"
+                      >
+                        <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
+                        {customer.email && <div className="text-xs text-gray-500">{customer.email}</div>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateCustomerModalOpen(true)}
+                className="mt-2 text-sm text-primary hover:text-primary-dark flex items-center gap-1"
+              >
+                <span className="material-symbols-outlined text-sm">add</span>
+                Create New Customer
+              </button>
+              {errors.customer && (
+                <p className="mt-1 text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">error</span>
+                  {errors.customer}
+                </p>
+              )}
+            </div>
+            
+            {formData.customer && !customerSearchQuery && (() => {
+              const customer = customerSearchResults.find(c => c.name === formData.customer) || customers.find(c => c.name === formData.customer);
+              return customer ? (
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-4 rounded-lg text-sm border border-blue-200 dark:border-blue-800 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-start gap-3">
+                    <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">account_circle</span>
+                    <div className="flex-1">
+                      <p className="font-bold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                        {customer.name}
+                        {customer.gstNumber && (
+                          <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded">GST: {customer.gstNumber}</span>
+                        )}
+                      </p>
+                      {(customer.email || customer.phone) && (
+                        <div className="space-y-1 text-gray-700 dark:text-gray-300">
+                          {customer.email && (
+                            <p className="flex items-center gap-2">
+                              <span className="material-symbols-outlined text-sm">mail</span>
+                              {customer.email}
+                            </p>
+                          )}
+                          {customer.phone && (
+                            <p className="flex items-center gap-2">
+                              <span className="material-symbols-outlined text-sm">phone</span>
+                              {customer.phone}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {customer.shippingAddress && (
+                        <p className="mt-2 text-gray-600 dark:text-gray-400 flex items-start gap-2">
+                          <span className="material-symbols-outlined text-sm">location_on</span>
+                          <span>
+                            {customer.shippingAddress}
+                            {customer.shippingCity && `, ${customer.shippingCity}`}
+                            {customer.shippingState && `, ${customer.shippingState}`}
+                            {customer.shippingPostalCode && ` - ${customer.shippingPostalCode}`}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null;
+            })()}
+          </div>
+
+          {/* Invoice Details Section */}
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">receipt_long</span>
+              Invoice Details
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <label>
+                <span className="text-sm font-medium mb-2 block text-gray-900 dark:text-white">Invoice Number <span className="text-red-500">*</span></span>
+                <input 
+                  type="text" 
+                  name="invoiceNumber"
+                  value={formData.invoiceNumber}
+                  onChange={handleInputChange}
+                  readOnly={isEdit}
+                  className={`w-full rounded-lg border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 p-2.5 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/50 ${isEdit ? 'cursor-not-allowed opacity-60' : ''} ${errors.invoiceNumber ? 'border-red-500' : ''}`}
+                  placeholder="INV-2025-001"
+                />
+                {errors.invoiceNumber && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.invoiceNumber}</p>}
+              </label>
+              <label>
+                <span className="text-sm font-medium mb-2 block text-gray-900 dark:text-white">Invoice Date <span className="text-red-500">*</span></span>
+                <input 
+                  type="date" 
+                  name="date"
+                  value={formData.date}
+                  onChange={handleInputChange}
+                  max="9999-12-31"
+                  className={`w-full rounded-lg border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 p-2.5 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/50 ${errors.date ? 'border-red-500' : ''}`}
+                />
+                {errors.date && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.date}</p>}
+              </label>
+              <label>
+                <span className="text-sm font-medium mb-2 block text-gray-900 dark:text-white flex items-center gap-1">
+                  Due Date
+                  <span className="text-xs text-gray-500" title="Payment due date">ⓘ</span>
+                </span>
+                <input 
+                  type="date" 
+                  name="dueDate"
+                  value={formData.dueDate}
+                  onChange={handleInputChange}
+                  min={formData.date}
+                  max="9999-12-31"
+                  className="w-full rounded-lg border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 p-2.5 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/50" 
+                />
+              </label>
+              <label>
+                <span className="text-sm font-medium mb-2 block text-gray-900 dark:text-white">Payment Terms</span>
+                <select
+                  name="paymentTerms"
+                  value={formData.paymentTerms}
+                  onChange={handleInputChange}
+                  className="w-full rounded-lg border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 p-2.5 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="Due on Receipt">Due on Receipt</option>
+                  <option value="Net 7 Days">Net 7 Days</option>
+                  <option value="Net 15 Days">Net 15 Days</option>
+                  <option value="Net 30 Days">Net 30 Days</option>
+                  <option value="Net 45 Days">Net 45 Days</option>
+                  <option value="Net 60 Days">Net 60 Days</option>
+                  <option value="Net 90 Days">Net 90 Days</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Line Items */}
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm p-6">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-3">
+              <span className="material-symbols-outlined text-primary">shopping_cart</span>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Line Items</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{items.length} item{items.length !== 1 ? 's' : ''} added</p>
+              </div>
+            </div>
+            {items.length === 0 && (
+              <span className="text-sm text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm">info</span>
+                Add items below
+              </span>
+            )}
+          </div>
+          {errors.items && (
+            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm">error</span>
+              {errors.items}
+            </div>
+          )}
+          
+          <div className="overflow-x-auto -mx-6 px-6">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-gray-200 dark:border-gray-800 text-gray-500 bg-gray-50 dark:bg-gray-800/50">
+                <tr>
+                  <th className="p-2 min-w-[140px] rounded-tl-lg text-xs">Product</th>
+                  <th className="p-2 min-w-[100px] text-xs">Warehouse</th>
+                  <th className="p-2 w-20 text-xs">Batch</th>
+                  <th className="p-2 w-20 text-center text-xs">Qty</th>
+                  <th className="p-2 w-20 text-xs">Unit</th>
+                  <th className="p-2 text-right w-24 text-xs">Price</th>
+                  <th className="p-2 text-center w-24 text-xs">GST %</th>
+                  <th className="p-2 text-center w-24 text-xs">CESS %</th>
+                  <th className="p-2 text-right w-28 text-xs">Total</th>
+                  <th className="p-2 w-10 rounded-tr-lg"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                {items.map((item) => (
+                  <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+                    <td className="p-2 min-w-[200px]">
+                      <InlineAsyncSelect
+                        value={item.product}
+                        onChange={(val, productData) => {
+                          handleItemChange(item.id, 'product', val);
+                          // Store product ID for later use
+                          if (productData) {
+                            setItems(prev => prev.map(i => 
+                              i.id === item.id ? { ...i, productId: productData.id } : i
+                            ));
+                          }
+                        }}
+                        onSearch={async (query) => {
+                          const response = await searchProducts(query);
+                          return response.data.items || [];
+                        }}
+                        renderOption={(product) => `${product.name} ${product.sku ? `(${product.sku})` : ''}`}
+                        renderDisplay={(product) => product.name}
+                        placeholder="Search product..."
+                        className="text-gray-900 dark:text-white text-xs font-medium"
+                      />
+                    </td>
+                    <td className="p-2 min-w-[150px]">
+                      <InlineAsyncSelect
+                        value={item.warehouse}
+                        onChange={(val) => handleItemChange(item.id, 'warehouse', val)}
+                        onSearch={async (query) => {
+                          if (!item.productId) {
+                            return [];
+                          }
+                          const response = await getProductWarehouses(item.productId, query);
+                          return response.data.items || [];
+                        }}
+                        renderOption={(warehouse) => warehouse.name}
+                        renderDisplay={(warehouse) => warehouse.name}
+                        placeholder="Select warehouse..."
+                        disabled={!item.product}
+                        className="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded p-1.5 text-xs text-gray-900 dark:text-white"
+                      />
+                    </td>
+                    <td className="p-2 min-w-[150px]">
+                      <InlineAsyncSelect
+                        value={item.batch}
+                        onChange={(val) => handleItemChange(item.id, 'batch', val)}
+                        onSearch={async (query) => {
+                          if (!item.productId) {
+                            return [];
+                          }
+                          const response = await getProductBatches(item.productId, query);
+                          return response.data.items || [];
+                        }}
+                        renderOption={(batch) => batch.batchNumber}
+                        renderDisplay={(batch) => batch.batchNumber}
+                        placeholder="Select batch..."
+                        disabled={!item.product}
+                        className="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded p-1.5 text-xs text-gray-900 dark:text-white"
+                      />
+                    </td>
+                    <td className="p-2 text-center">
+                      <input 
+                        type="number" 
+                        value={item.qty}
+                        onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)}
+                        className="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded p-1.5 text-xs text-center focus:ring-primary/50 text-gray-900 dark:text-white"
+                        min="1"
+                      />
+                    </td>
+                    <td className="p-2">
+                      {(() => {
+                        const product = products.find(p => p.name === item.product);
+                        const hasAltUnit = product?.altMeasuringUnit;
+                        return (
+                          <select 
+                            value={item.unit}
+                            onChange={(e) => handleItemChange(item.id, 'unit', e.target.value)}
+                            disabled={!item.product}
+                            className="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded p-1.5 text-xs focus:ring-primary/50 text-gray-900 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {!item.product ? (
+                              <option value="">-</option>
+                            ) : (
+                              <>
+                                {product?.measuringUnit && (
+                                  <option value={product.measuringUnit}>{product.measuringUnit}</option>
+                                )}
+                                {hasAltUnit && (
+                                  <option value={product.altMeasuringUnit}>
+                                    {product.altMeasuringUnit}
+                                    {product.conversionRatio ? ` (1:${product.conversionRatio})` : ''}
+                                  </option>
+                                )}
+                              </>
+                            )}
+                          </select>
+                        );
+                      })()}
+                    </td>
+                    <td className="p-2 text-right">
+                      <input 
+                        type="number" 
+                        value={item.price.toFixed(2)}
+                        onChange={(e) => handleItemChange(item.id, 'price', e.target.value)}
+                        className="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded p-1.5 text-xs text-right focus:ring-primary/50 text-gray-900 dark:text-white"
+                        min="0"
+                        step="0.01"
+                      />
+                    </td>
+                    <td className="p-2 text-center">
+                      <select 
+                        value={item.gstRate}
+                        onChange={(e) => handleItemChange(item.id, 'gstRate', e.target.value)}
+                        className="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded p-1.5 text-xs text-center focus:ring-primary/50 text-gray-900 dark:text-white"
+                      >
+                        <option value="0">0%</option>
+                        <option value="5">5%</option>
+                        <option value="12">12%</option>
+                        <option value="18">18%</option>
+                        <option value="28">28%</option>
+                      </select>
+                    </td>
+                    <td className="p-2 text-center">
+                      <select 
+                        value={item.cessRate}
+                        onChange={(e) => handleItemChange(item.id, 'cessRate', e.target.value)}
+                        className="w-full bg-transparent border border-gray-200 dark:border-gray-700 rounded p-1.5 text-xs text-center focus:ring-primary/50 text-gray-900 dark:text-white"
+                      >
+                        <option value="0">0%</option>
+                        <option value="1">1%</option>
+                        <option value="2">2%</option>
+                        <option value="3">3%</option>
+                        <option value="5">5%</option>
+                      </select>
+                    </td>
+                    <td className="p-2 text-right">
+                       <input 
+                        type="number" 
+                        value={item.total.toFixed(2)}
+                        onChange={(e) => handleItemChange(item.id, 'total', e.target.value)}
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-1.5 text-xs text-right font-semibold focus:ring-primary/50 text-gray-900 dark:text-white"
+                        min="0"
+                        step="0.01"
+                      />
+                    </td>
+                    <td className="p-2 text-center align-middle">
+                      <button 
+                        onClick={() => deleteItem(item.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-lg">delete</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 flex items-center justify-between">
+            <button 
+              onClick={addNewRow}
+              type="button"
+              className="flex items-center gap-2 text-primary hover:text-primary-dark font-medium px-4 py-2 rounded-lg border border-primary hover:bg-primary/5 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">add</span> 
+              Add Row
+            </button>
+            {items.length > 0 && (
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                <span className="font-medium">{items.length}</span> row{items.length !== 1 ? 's' : ''} • 
+                <span className="font-medium">${grandTotal.toFixed(2)}</span> total
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Totals */}
+        <div className="flex justify-end">
+          <div className="w-full max-w-md bg-gradient-to-br from-white to-gray-50 dark:from-gray-900 dark:to-gray-800 rounded-xl border-2 border-gray-200 dark:border-gray-700 p-6 shadow-lg space-y-3">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+              <span className="material-symbols-outlined text-sm">calculate</span>
+              Invoice Summary
+            </h3>
+            <div className="flex justify-between text-gray-600 dark:text-gray-400 text-sm">
+              <span>Subtotal (Excl. Tax)</span>
+              <span className="font-semibold text-gray-900 dark:text-white">${subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-gray-600 dark:text-gray-400 text-sm">
+              <span className="flex items-center gap-1">
+                Total Tax
+                <span className="text-xs text-gray-500" title="CGST + SGST + IGST + CESS">ⓘ</span>
+              </span>
+              <span className="font-semibold text-gray-900 dark:text-white">${totalTax.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between items-center text-xl font-bold text-gray-900 dark:text-white border-t-2 border-gray-300 dark:border-gray-600 pt-4 mt-3">
+              <span className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">receipt</span>
+                Grand Total
+              </span>
+              <span className="text-primary text-2xl">${grandTotal.toFixed(2)}</span>
+            </div>
+            {items.length > 0 && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 text-center pt-2 border-t border-gray-200 dark:border-gray-700">
+                {items.length} line item{items.length !== 1 ? 's' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Actions */}
+      <footer className="fixed bottom-0 right-0 w-full lg:w-[calc(100%-16rem)] bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-t-2 border-gray-200 dark:border-gray-800 p-4 shadow-lg z-10">
+        <div className="flex justify-between items-center max-w-7xl mx-auto">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            
+          </div>
+          <div className="flex gap-3">
+            <button 
+              onClick={() => navigate('/invoices')} 
+              disabled={saving}
+              type="button"
+              className="px-5 py-2.5 rounded-lg font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 border border-gray-300 dark:border-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleSave}
+              disabled={saving || items.filter(item => item.product).length === 0}
+              type="button"
+              className="px-5 py-2.5 rounded-lg font-semibold text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border border-gray-300 dark:border-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              title="Save as draft (Ctrl+S)"
+            >
+              {saving ? (
+                <>
+                  <span className="animate-spin material-symbols-outlined text-sm">progress_activity</span>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-sm">draft</span>
+                  Save Draft
+                </>
+              )}
+            </button>
+            <button 
+              onClick={handleGenerateInvoice}
+              disabled={saving || items.filter(item => item.product).length === 0}
+              type="button"
+              className="px-6 py-2.5 rounded-lg bg-primary text-white font-semibold hover:bg-primary/90 shadow-md transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg"
+              title="Generate and save invoice (Ctrl+Enter)"
+            >
+              {saving ? (
+                <>
+                  <span className="animate-spin material-symbols-outlined text-sm">progress_activity</span>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-sm">check_circle</span>
+                  {isEdit ? 'Save Changes' : 'Generate Invoice'}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      <QuickCreateCustomerModal
+        isOpen={isCreateCustomerModalOpen}
+        onClose={() => setIsCreateCustomerModalOpen(false)}
+        onSave={handleCreateCustomer}
+      />
+
+      <ProductSelectionModal
+        isOpen={isProductSelectionModalOpen}
+        onClose={() => setIsProductSelectionModalOpen(false)}
+        existingItems={items}
+        onSelectProducts={handleSelectProducts}
+      />
+    </div>
+  );
+};
+
+export default InvoiceForm;
